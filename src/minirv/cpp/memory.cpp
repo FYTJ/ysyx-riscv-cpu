@@ -2,6 +2,8 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <time.h>
+#include <sys/sysinfo.h>
 
 static Memory* g_memory = nullptr;
 
@@ -44,29 +46,29 @@ void Memory::load_program() {
         std::cerr << "Failed to read program file: " << program_path << std::endl;
     }
     file.close();
-    uint32_t ebreak_addr = 0x224;
-    uint32_t ebreak_inst = 0x00100073;
-    if (in_range(ebreak_addr) && in_range(ebreak_addr + 3)) {
-        size_t idx = ebreak_addr - MEM_BASE;
-        mem[idx + 0] = static_cast<uint8_t>((ebreak_inst >> 0)  & 0xFF);
-        mem[idx + 1] = static_cast<uint8_t>((ebreak_inst >> 8)  & 0xFF);
-        mem[idx + 2] = static_cast<uint8_t>((ebreak_inst >> 16) & 0xFF);
-        mem[idx + 3] = static_cast<uint8_t>((ebreak_inst >> 24) & 0xFF);
-        std::cout << "Overwrote address 0x" << std::hex << ebreak_addr 
-                  << " with ebreak instruction 0x" << ebreak_inst << std::dec << std::endl;
-    }
+    // uint32_t ebreak_addr = 0x224;
+    // uint32_t ebreak_inst = 0x00100073;
+    // size_t idx = ebreak_addr - MEM_BASE;
+    // mem[idx + 0] = static_cast<uint8_t>((ebreak_inst >> 0)  & 0xFF);
+    // mem[idx + 1] = static_cast<uint8_t>((ebreak_inst >> 8)  & 0xFF);
+    // mem[idx + 2] = static_cast<uint8_t>((ebreak_inst >> 16) & 0xFF);
+    // mem[idx + 3] = static_cast<uint8_t>((ebreak_inst >> 24) & 0xFF);
+    // std::cout << "Overwrote address 0x" << std::hex << ebreak_addr << " with ebreak instruction 0x" << ebreak_inst << std::dec << std::endl;
 }
 
 Memory::Memory() : mem(MEM_SIZE, 0) {}
 
-bool Memory::in_range(uint32_t addr) {
-    return addr >= MEM_BASE && addr < (MEM_BASE + MEM_SIZE);
-}
-
 uint32_t Memory::read_word(uint32_t addr) {
-    if (!in_range(addr) || !in_range(addr + 3)) {
-        return 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    uint64_t rt = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)ts.tv_nsec / 1000ull;
+    if (addr == RTC_ADDR) {
+        return rt & 0xFFFFFFFFull;
     }
+    else if (addr == RTC_ADDR + 4) {
+        return (rt >> 32) & 0xFFFFFFFFull;
+    }
+
     size_t idx = addr - MEM_BASE;
     uint32_t b0 = static_cast<uint32_t>(mem[idx + 0]);
     uint32_t b1 = static_cast<uint32_t>(mem[idx + 1]);
@@ -76,7 +78,24 @@ uint32_t Memory::read_word(uint32_t addr) {
 }
 
 void Memory::write_word(uint32_t addr, uint32_t data, uint8_t strb) {
-    if (!in_range(addr) || !in_range(addr + 3)) {
+    if (addr == SERIAL_PORT) {
+        switch (strb)
+        {
+        case 0x1:
+            putchar(data & 0xFF);
+            break;
+        case 0x2:
+            putchar((data >> 8) & 0xFF);
+            break;
+        case 0x4:
+            putchar((data >> 16) & 0xFF);
+            break;
+        case 0x8:
+            putchar((data >> 24) & 0xFF);
+            break;
+        default:
+            break;
+        }
         return;
     }
     size_t idx = addr - MEM_BASE;

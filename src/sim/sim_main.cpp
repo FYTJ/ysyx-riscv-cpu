@@ -10,7 +10,7 @@
 #define HAS_TRACE false
 
 static uint64_t sim_time = 0;
-static const uint64_t MAX_SIM_TIME = 500000;
+static const uint64_t MAX_SIM_TIME = 10000000000;
 
 struct TraceEntry { uint32_t pc; uint32_t waddr; uint32_t wdata; };
 class TraceFile {

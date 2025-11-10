@@ -17,14 +17,11 @@ class SimTop extends Module {
     
     val cycle_count = RegInit(0.U(32.W))
     cycle_count := cycle_count + 1.U
-    
-    val max_cycles = 50000.U
-    val timeout = cycle_count >= max_cycles
-    
+        
     val cpu_exit = cpu.io.ebreak
     
-    io.exit := timeout || cpu_exit
-    io.exit_code := Mux(timeout, 1.U, 0.U)
+    io.exit := cpu_exit
+    io.exit_code := Mux(cpu_exit, 0.U, 1.U)
     io.debug_r10 := cpu.io.debug_r10
     io.debug_pc := cpu.io.debug_pc
     io.debug_rf_wen := cpu.io.debug_rf_wen
