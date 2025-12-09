@@ -44,4 +44,18 @@ class IFU extends Module {
     dontTouch(ready_go)
     dontTouch(seq_pc)
     dontTouch(next_pc)
+
+    DebugSignals.tap(this, pc, "ifu.pc")
+    DebugSignals.tap(this, seq_pc, "ifu.seq_pc")
+    DebugSignals.tap(this, next_pc, "ifu.next_pc")
+    DebugSignals.tap(this, ready_go.asUInt, "ifu.ready_go")
+    DebugSignals.tap(this, io.br_taken.asUInt, "ifu.io.br_taken")
+    DebugSignals.tap(this, io.br_target, "ifu.io.br_target")
+    DebugSignals.tap(this, io.ebreak.asUInt, "ifu.io.ebreak")
+    DebugSignals.tap(this, io.memReq.valid.asUInt, "ifu.io.memReq.valid")
+    DebugSignals.tap(this, io.memReq.ready.asUInt, "ifu.io.memReq.ready")
+    DebugSignals.tap(this, io.memReq.bits.asUInt, "ifu.io.memReq.bits")
+    DebugSignals.tap(this, io.out.valid.asUInt, "ifu.io.out.valid")
+    DebugSignals.tap(this, io.out.ready.asUInt, "ifu.io.out.ready")
+    DebugSignals.tap(this, io.out.bits.asUInt, "ifu.io.out.bits")
 }

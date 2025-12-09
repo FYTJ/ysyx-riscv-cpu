@@ -12,8 +12,10 @@
 #include "expr.h"
 #include "disasm.h"
 #include "trace.h"
+#include "../minirv/cpp/signal.h"
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 DebugCli::DebugCli() {
     debug_info.regs = new uint32_t[32];
@@ -54,6 +56,7 @@ static const CmdEntry cmd_table[] = {
     { "stepi", "Execute the next N instructions and then pause; if N is omitted, the default is 1", &DebugCli::cmd_si },
     { "info", "Display information about the program", &DebugCli::cmd_info},
     { "i", "Display information about the program", &DebugCli::cmd_info},
+    { "info s", "Display signals: info s [FILTER]", &DebugCli::cmd_info},
     { "x", "Examine memory: x/N{fmt}{size} EXPR (fmt: x|d|u|t, size: b|h|w)", &DebugCli::cmd_x},
     { "examine", "Examine memory: x/N{fmt}{size} EXPR (fmt: x|d|u|t, size: b|h|w)", &DebugCli::cmd_x},
     { "p", "Print expression: p/[fmt][size] EXPR (fmt: x|d|u|t)", &DebugCli::cmd_p},
@@ -138,6 +141,173 @@ string DebugCli::read_line() {
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
         if (n <= 0) { tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig); return string(); }
+        if (c == '\t') {
+            size_t first_non = line.find_first_not_of(" \t\r\n\v\f");
+            if (first_non != std::string::npos && cursor >= first_non) {
+                size_t first_space = line.find(' ', first_non);
+                size_t second_non = (first_space == std::string::npos ? std::string::npos : line.find_first_not_of(" \t\r\n\v\f", first_space + 1));
+                bool in_first_token = (first_space == std::string::npos) || (second_non == std::string::npos) || (cursor <= first_space);
+                if (in_first_token) {
+                    size_t token_end = (first_space == std::string::npos ? cursor : std::min(cursor, first_space));
+                    std::string prefix = line.substr(first_non, token_end - first_non);
+                    if (!prefix.empty()) {
+                        using HandlerT = std::pair<Status,int> (DebugCli::*)(std::string_view);
+                        std::vector<std::pair<HandlerT, std::string>> groups;
+                        for (size_t i = 0; i < NR_CMD; ++i) {
+                            auto h = cmd_table[i].handler;
+                            bool found = false;
+                            for (auto &g : groups) {
+                                if (g.first == h) {
+                                    if (std::strlen(cmd_table[i].name) < g.second.size() ||
+                                        (std::strlen(cmd_table[i].name) == g.second.size() && std::string(cmd_table[i].name) < g.second)) {
+                                        g.second = std::string(cmd_table[i].name);
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                groups.emplace_back(h, std::string(cmd_table[i].name));
+                            }
+                        }
+                        std::vector<std::string> suggs;
+                        for (auto &g : groups) {
+                            std::vector<std::string> matches;
+                            for (size_t j = 0; j < NR_CMD; ++j) {
+                                if (cmd_table[j].handler == g.first) {
+                                    std::string nm(cmd_table[j].name);
+                                    if (nm.find(' ') == std::string::npos && nm.rfind(prefix, 0) == 0) matches.push_back(nm);
+                                }
+                            }
+                            if (matches.empty()) continue;
+                            std::string best = matches[0];
+                            for (size_t k = 1; k < matches.size(); ++k) {
+                                if (matches[k].size() < best.size() || (matches[k].size() == best.size() && matches[k] < best)) {
+                                    best = matches[k];
+                                }
+                            }
+                            suggs.push_back(best);
+                        }
+                        if (suggs.size() == 1) {
+                            std::string new_line = line.substr(0, first_non) + suggs[0] + line.substr(token_end);
+                            line.swap(new_line);
+                            cursor = first_non + suggs[0].size();
+                            cout << "\r(debugger) " << line << "\x1b[K";
+                            size_t tail = line.size() - cursor;
+                            if (tail > 0) cout << "\x1b[" << tail << "D";
+                            cout << flush;
+                        } else if (suggs.size() > 1) {
+                            cout << "\n";
+                            winsize ws{}; int width = 80; if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) width = ws.ws_col;
+                            int colw = 30; int cols = std::max(1, width / colw);
+                            for (size_t i = 0; i < suggs.size(); ++i) {
+                                cout << std::left << std::setw(colw) << suggs[i];
+                                if ((int)((i + 1) % cols) == 0) cout << "\n";
+                            }
+                            if ((suggs.size() % cols) != 0) cout << "\n";
+                            cout << "(debugger) " << line << "\x1b[K";
+                            size_t tail = line.size() - cursor;
+                            if (tail > 0) cout << "\x1b[" << tail << "D";
+                            cout << flush;
+                        }
+                    }
+                } else {
+                    size_t ts = cursor;
+                    while (ts > 0) {
+                        char cc = line[ts - 1];
+                        if (!((cc >= 'a' && cc <= 'z') || (cc >= 'A' && cc <= 'Z') || (cc >= '0' && cc <= '9') || cc == '_' || cc == '.')) break;
+                        ts--;
+                    }
+                    std::string prefix = line.substr(ts, cursor - ts);
+                    if (prefix.empty()) { continue; }
+                    size_t first_non2 = line.find_first_not_of(" \t\r\n\v\f");
+                    size_t first_space2 = line.find(' ', first_non2);
+                    std::string base_cmd;
+                    if (first_non2 != std::string::npos && first_space2 != std::string::npos) {
+                        base_cmd = line.substr(first_non2, first_space2 - first_non2);
+                    }
+                    std::string sec_tok;
+                    if (!base_cmd.empty()) {
+                        size_t sec_start = line.find_first_not_of(" \t\r\n\v\f", first_space2 + 1);
+                        if (sec_start != std::string::npos) {
+                            size_t sec_end = line.find(' ', sec_start);
+                            if (sec_end == std::string::npos) sec_end = line.size();
+                            sec_tok = line.substr(sec_start, sec_end - sec_start);
+                        }
+                    }
+                    std::vector<std::pair<std::string, uint32_t>> list;
+                    bool use_regs = false;
+                    if ((base_cmd == "info" || base_cmd == "i") && sec_tok == "r") {
+                        use_regs = true;
+                    } else if ((base_cmd == "info" || base_cmd == "i") && sec_tok == "s") {
+                        use_regs = false;
+                    } else if ((base_cmd == "info" || base_cmd == "i")) {
+                        continue;
+                    }
+                    if (use_regs) {
+                        std::vector<std::pair<std::string, uint32_t>> tmp;
+                        std::vector<std::string> names;
+                        names.push_back("pc");
+                        for (int i = 0; i < 32; ++i) names.push_back(std::string(regs[i]));
+                        std::sort(names.begin(), names.end());
+                        for (auto &n : names) { if (n.rfind(prefix, 0) == 0) tmp.emplace_back(n, 0u); }
+                        list.swap(tmp);
+                    } else {
+                        list = signal_list(prefix);
+                    }
+                    if (!list.empty()) {
+                        if (list.size() == 1) {
+                            std::string comp = list[0].first;
+                            std::string new_line = line.substr(0, ts) + comp + line.substr(cursor);
+                            line.swap(new_line);
+                            cursor = ts + comp.size();
+                            cout << "\r(debugger) " << line << "\x1b[K";
+                            size_t tail = line.size() - cursor;
+                            if (tail > 0) cout << "\x1b[" << tail << "D";
+                            cout << flush;
+                        } else if (list.size() <= 10) {
+                            cout << "\n";
+                            winsize ws{}; int width = 80; if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) width = ws.ws_col;
+                            int colw = 30; int cols = std::max(1, width / colw);
+                            for (size_t i = 0; i < list.size(); ++i) {
+                                cout << std::left << std::setw(colw) << list[i].first;
+                                if ((int)((i + 1) % cols) == 0) cout << "\n";
+                            }
+                            if ((list.size() % cols) != 0) cout << "\n";
+                            cout << "(debugger) " << line << "\x1b[K";
+                            size_t tail = line.size() - cursor;
+                            if (tail > 0) cout << "\x1b[" << tail << "D";
+                            cout << flush;
+                        } else {
+                            cout << "\n";
+                            cout << "do you wish to see all " << list.size() << " possibilities?(y/n)" << flush;
+                            char ans = 0;
+                            if (read(STDIN_FILENO, &ans, 1) > 0) {
+                                if (ans == 'y' || ans == 'Y') {
+                                    cout << "\n";
+                                    winsize ws{}; int width = 80; if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) width = ws.ws_col;
+                                    int colw = 30; int cols = std::max(1, width / colw);
+                                    for (size_t i = 0; i < list.size(); ++i) {
+                                        cout << std::left << std::setw(colw) << list[i].first;
+                                        if ((int)((i + 1) % cols) == 0) cout << "\n";
+                                    }
+                                    if ((list.size() % cols) != 0) cout << "\n";
+                                } else {
+                                    cout << "\n";
+                                }
+                            } else {
+                                cout << "\n";
+                            }
+                            cout << "(debugger) " << line << "\x1b[K";
+                            size_t tail = line.size() - cursor;
+                            if (tail > 0) cout << "\x1b[" << tail << "D";
+                            cout << flush;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         if (c == '\r' || c == '\n') {
             cout << "\r(debugger) " << line << "\x1b[K" << endl;
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
@@ -235,6 +405,25 @@ pair<Status, int> DebugCli::cmd_info(string_view args) {
                 return {Status::PAUSE, 0};
             }
             cout << reg << ": 0x" << hex << r << dec << endl;
+        }
+        return {Status::PAUSE, 0};
+    }
+    else if (arg == "s") {
+        std::string_view filter = reg;
+        auto list = signal_list(filter);
+        if (list.empty()) {
+            if (filter.empty()) { cout << "No signals registered" << endl; }
+            else { cout << "No signals matched: " << filter << endl; }
+            return {Status::PAUSE, 0};
+        }
+        size_t count = list.size();
+        size_t limit = 100;
+        cout << "Signals (" << count << ")" << (filter.empty()?"":std::string(" prefix='") + std::string(filter) + "'") << ":" << endl;
+        for (size_t i = 0; i < list.size() && i < limit; ++i) {
+            cout << list[i].first << ": 0x" << hex << list[i].second << dec << endl;
+        }
+        if (list.size() > limit) {
+            cout << "... (use 'info s " << filter << "' with narrower FILTER to see more)" << endl;
         }
         return {Status::PAUSE, 0};
     }

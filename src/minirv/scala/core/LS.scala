@@ -51,8 +51,25 @@ class LSU extends Module{
     q.io.enq.bits := to_enq
     io.out <> q.io.deq
 
-    dontTouch(ready_go)
-    dontTouch(byte_off)
-    dontTouch(baseStrobe)
-    dontTouch(wdata)
+    if (DebugConfig.enableTaps) {
+        dontTouch(ready_go)
+        dontTouch(byte_off)
+        dontTouch(baseStrobe)
+        dontTouch(wdata)
+
+        DebugSignals.tap(this, ready_go.asUInt, "lsu.ready_go")
+        DebugSignals.tap(this, byte_off, "lsu.byte_off")
+        DebugSignals.tap(this, baseStrobe, "lsu.baseStrobe")
+        DebugSignals.tap(this, wdata, "lsu.wdata")
+        DebugSignals.tap(this, io.in.valid.asUInt, "lsu.io.in.valid")
+        DebugSignals.tap(this, io.in.ready.asUInt, "lsu.io.in.ready")
+        DebugSignals.tap(this, io.in.bits.asUInt, "lsu.io.in.bits")
+        DebugSignals.tap(this, io.out.valid.asUInt, "lsu.io.out.valid")
+        DebugSignals.tap(this, io.out.ready.asUInt, "lsu.io.out.ready")
+        DebugSignals.tap(this, io.out.bits.asUInt, "lsu.io.out.bits")
+        DebugSignals.tap(this, io.memReq.valid.asUInt, "lsu.io.memReq.valid")
+        DebugSignals.tap(this, io.memReq.ready.asUInt, "lsu.io.memReq.ready")
+        DebugSignals.tap(this, io.memReq.bits.asUInt, "lsu.io.memReq.bits")
+        DebugSignals.tap(this, io.memReq.bits.addr, "lsu.addr")
+    }
 }

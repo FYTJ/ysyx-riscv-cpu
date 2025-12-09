@@ -2,6 +2,7 @@ package minirv.scala.core
 import chisel3._
 import chisel3.util.{Decoupled, Queue}
 import minirv.scala.core.ctrl._
+import minirv.scala.common._
 
 class EXU extends Module {
     val io = IO(new Bundle {
@@ -42,4 +43,14 @@ class EXU extends Module {
     dontTouch(ready_go)
     dontTouch(alu_A)
     dontTouch(alu_B)
+
+    DebugSignals.tap(this, io.alu_result, "exu.alu_result")
+    DebugSignals.tap(this, alu_A.asUInt, "exu.alu_A")
+    DebugSignals.tap(this, alu_B.asUInt, "exu.alu_B")
+    DebugSignals.tap(this, io.in.valid.asUInt, "exu.io.in.valid")
+    DebugSignals.tap(this, io.in.ready.asUInt, "exu.io.in.ready")
+    DebugSignals.tap(this, io.in.bits.asUInt, "exu.io.in.bits")
+    DebugSignals.tap(this, io.out.valid.asUInt, "exu.io.out.valid")
+    DebugSignals.tap(this, io.out.ready.asUInt, "exu.io.out.ready")
+    DebugSignals.tap(this, io.out.bits.asUInt, "exu.io.out.bits")
 }

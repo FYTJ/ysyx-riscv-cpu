@@ -2,11 +2,12 @@
 #include "debug.h"
 #include "../minirv/cpp/register.h"
 #include "../minirv/cpp/memory.h"
+#include "../minirv/cpp/signal.h"
 #include <iostream>
 #include <string>
 
 enum class TKTYPE{
-  TK_NOTYPE = 256, TK_EQ, TK_NUM, TK_NEQ, TK_AND, TK_HEX, TK_REG, TK_DEREF, TK_ADD, TK_SUB, TK_MUL, TK_DIV, TK_LPAREN, TK_RPAREN
+  TK_NOTYPE = 256, TK_EQ, TK_NUM, TK_NEQ, TK_AND, TK_HEX, TK_REG, TK_SIG, TK_DEREF, TK_ADD, TK_SUB, TK_MUL, TK_DIV, TK_LPAREN, TK_RPAREN
 };
 
 struct Rule {
@@ -19,6 +20,7 @@ static vector<Rule> rules = {
     {regex(R"( +)", regex_constants::extended), TKTYPE::TK_NOTYPE},
     {regex(R"(0x[0-9a-fA-F]+)", regex_constants::extended), TKTYPE::TK_HEX},
     {regex(R"(\$[a-zA-Z][a-zA-Z0-9]*)", regex_constants::extended), TKTYPE::TK_REG},
+    {regex(R"(@[A-Za-z0-9_\.]+)", regex_constants::extended), TKTYPE::TK_SIG},
     {regex(R"([0-9]+)", regex_constants::extended), TKTYPE::TK_NUM},
     {regex(R"(\+)", regex_constants::extended), TKTYPE::TK_ADD},
     {regex(R"(-)", regex_constants::extended), TKTYPE::TK_SUB},
@@ -151,6 +153,16 @@ long long eval(int start, int end, bool *success) {
                 if (name_sv == regs[i]) {
                     return (long long)g_regs[i];
                 }
+            }
+            *success = false;
+            return 0;
+        }
+        if (tokens[start].type == TKTYPE::TK_SIG) {
+            string_view name_sv(tokens[start].str);
+            name_sv.remove_prefix(1);
+            uint32_t v = 0;
+            if (signal_get(name_sv, v)) {
+                return (long long)v;
             }
             *success = false;
             return 0;
