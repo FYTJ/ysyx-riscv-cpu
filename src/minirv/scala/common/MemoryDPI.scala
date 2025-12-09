@@ -55,7 +55,7 @@ class MemoryInterface extends Module {
     io.resp.bits.wfinish := memory_dpi.io.wfinish
 }
 
-object DPI {
+object Memory_DPI {
     def createMemoryInterface(): MemoryInterface = {
         Module(new MemoryInterface)
     }

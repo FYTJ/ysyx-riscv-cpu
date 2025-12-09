@@ -15,11 +15,13 @@ class RegFile extends Module {
         val RF_waddr = Input(UInt(5.W))
         val RF_wdata = Input(UInt(32.W))
         val debug_r10 = Output(UInt(32.W))
+        val RF_value = Output(Vec(32, UInt(32.W)))
     })
     val reg_file = RegInit(VecInit(Seq.fill(32)(0.U(32.W))))
     io.RF_rdata1 := reg_file(io.RF_raddr1)
     io.RF_rdata2 := reg_file(io.RF_raddr2)
     io.debug_r10 := reg_file(10)
+    io.RF_value := reg_file
     when (io.RF_wen && io.RF_waddr =/= 0.U) {
         reg_file(io.RF_waddr) := io.RF_wdata
     }
@@ -34,16 +36,22 @@ class CpuTop extends Module {
         val ebreak = Output(Bool())
         val debug_r10 = Output(UInt(32.W))
     })
+
     val reg_file = Module(new RegFile)
     io.debug_r10 := reg_file.io.debug_r10
+    val register_dpi = Module(new RegisterDPI)
+    register_dpi.io.clock := clock
+    register_dpi.io.reset := reset
+    register_dpi.io.RF_value := reg_file.io.RF_value
+
     val ifu = Module(new IFU)
     val idu = Module(new IDU)
     val exu = Module(new EXU)
     val lsu = Module(new LSU)
     val wbu = Module(new WBU)
 
-    val inst_memory = DPI.createMemoryInterface()
-    val data_memory = DPI.createMemoryInterface()
+    val inst_memory = Memory_DPI.createMemoryInterface()
+    val data_memory = Memory_DPI.createMemoryInterface()
 
     inst_memory.io.req <> ifu.io.memReq
     ifu.io.br_taken := idu.io.br_taken
